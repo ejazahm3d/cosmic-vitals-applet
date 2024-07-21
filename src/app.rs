@@ -3,8 +3,9 @@
 use cosmic::app::{Command, Core};
 use cosmic::iced::wayland::popup::{destroy_popup, get_popup};
 use cosmic::iced::window::Id;
-use cosmic::iced::Limits;
+use cosmic::iced::{time, Alignment, Limits, Subscription};
 use cosmic::iced_style::application;
+use cosmic::prelude::CollectionWidget;
 use cosmic::widget::{self, settings};
 use cosmic::{Application, Element, Theme};
 
@@ -20,6 +21,9 @@ pub struct YourApp {
     popup: Option<Id>,
     /// Example row toggler.
     example_row: bool,
+    ram_usage: bool,
+    ram_usage_text: String,
+    system: sysinfo::System,
 }
 
 /// This is the enum that contains all the possible variants that your application will need to transmit messages.
@@ -30,6 +34,8 @@ pub enum Message {
     TogglePopup,
     PopupClosed(Id),
     ToggleExampleRow(bool),
+    ToggleRamUsage(bool),
+    Tick,
 }
 
 /// Implement the `Application` trait for your application.
@@ -65,8 +71,21 @@ impl Application for YourApp {
     /// - `flags` is used to pass in any data that your application needs to use before it starts.
     /// - `Command` type is used to send messages to your application. `Command::none()` can be used to send no messages to your application.
     fn init(core: Core, _flags: Self::Flags) -> (Self, Command<Self::Message>) {
+        let mut system = sysinfo::System::new();
+        system.refresh_memory();
+        let s = &system;
+
+        let ram_usage_text = format!(
+            "{:.2} GB / {:.2} GB",
+            s.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
+            s.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0
+        );
+
         let app = YourApp {
             core,
+            system,
+            ram_usage_text,
+            ram_usage: true,
             ..Default::default()
         };
 
@@ -84,11 +103,24 @@ impl Application for YourApp {
     ///
     /// To get a better sense of which widgets are available, check out the `widget` module.
     fn view(&self) -> Element<Self::Message> {
-        self.core
-            .applet
-            .icon_button("display-symbolic")
-            .on_press(Message::TogglePopup)
-            .into()
+        let content_list = widget::row::<Self::Message>()
+            .push_maybe(if self.ram_usage {
+                Some(widget::text(self.ram_usage_text.clone()))
+            } else {
+                None
+            })
+            .spacing(5)
+            .push(
+                widget::button(widget::icon::from_name("display-symbolic"))
+                    .on_press(Message::TogglePopup),
+            )
+            .align_items(Alignment::Center);
+
+        content_list.into()
+    }
+
+    fn subscription(&self) -> Subscription<Self::Message> {
+        time::every(std::time::Duration::from_secs(5)).map(|_| Message::Tick)
     }
 
     fn view_window(&self, _id: Id) -> Element<Self::Message> {
@@ -97,9 +129,12 @@ impl Application for YourApp {
             .spacing(0)
             .add(settings::item(
                 fl!("example-row"),
-                widget::toggler(None, self.example_row, |value| {
-                    Message::ToggleExampleRow(value)
-                }),
+                widget::toggler(None, self.example_row, Message::ToggleExampleRow),
+            ))
+            .spacing(5)
+            .add(settings::item(
+                fl!("ram-usage"),
+                widget::toggler(None, self.ram_usage, Message::ToggleRamUsage),
             ));
 
         self.core.applet.popup_container(content_list).into()
@@ -134,6 +169,17 @@ impl Application for YourApp {
                 }
             }
             Message::ToggleExampleRow(toggled) => self.example_row = toggled,
+            Message::ToggleRamUsage(toggled) => self.ram_usage = toggled,
+            Message::Tick => {
+                self.system.refresh_memory();
+                let s = &self.system;
+
+                self.ram_usage_text = format!(
+                    "{:.2} GB / {:.2} GB",
+                    s.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
+                    s.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0
+                );
+            }
         }
         Command::none()
     }
