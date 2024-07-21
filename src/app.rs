@@ -13,6 +13,7 @@ use crate::fl;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WatcherId {
     RamUsage,
+    DiskUsage,
 }
 
 #[derive(Debug, Clone)]
@@ -32,21 +33,33 @@ pub struct YourApp {
     popup: Option<Id>,
     /// Example row toggler.
     example_row: bool,
-    system: sysinfo::System,
     watchers: Vec<Watcher>,
 }
 
-impl YourApp {
-    fn get_ram_usage(&mut self) -> String {
-        self.system.refresh_memory();
-        let ram_usage_text = format!(
-            "{:.2} GB / {:.2} GB",
-            self.system.used_memory() as f64 / 1000.0 / 1000.0 / 1000.0,
-            self.system.total_memory() as f64 / 1000.0 / 1000.0 / 1000.0
-        );
+fn get_ram_usage() -> String {
+    let mut system = sysinfo::System::new();
+    system.refresh_memory();
+    let ram_usage_text = format!(
+        "RAM {:.2} GB",
+        system.used_memory() as f64 / 1000.0 / 1000.0 / 1000.0,
+    );
 
-        ram_usage_text
+    ram_usage_text
+}
+
+fn get_storage_usage() -> String {
+    let mut disks = sysinfo::Disks::new();
+    disks.refresh_list();
+    let mut storage_usage_text = String::from("");
+    for disk in &mut disks {
+        if disk.name().eq("/dev/nvme0n1p3") {
+            storage_usage_text = format!(
+                "Disk {:.2} GB",
+                disk.available_space() as f64 / 1000.0 / 1000.0 / 1000.0
+            );
+        }
     }
+    storage_usage_text
 }
 
 /// This is the enum that contains all the possible variants that your application will need to transmit messages.
@@ -94,19 +107,8 @@ impl Application for YourApp {
     /// - `flags` is used to pass in any data that your application needs to use before it starts.
     /// - `Command` type is used to send messages to your application. `Command::none()` can be used to send no messages to your application.
     fn init(core: Core, _flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        let mut system = sysinfo::System::new();
-        system.refresh_memory();
-        // let s = &system;
-
-        // let ram_usage_text = format!(
-        //     "{:.2} GB / {:.2} GB",
-        //     s.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
-        //     s.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0
-        // );
-
         let app = YourApp {
             core,
-            system,
             ..Default::default()
         };
 
@@ -128,7 +130,9 @@ impl Application for YourApp {
 
         for watcher in &self.watchers {
             if watcher.show {
-                children.push(Element::from(widget::text(watcher.label.clone())));
+                children.push(Element::from(widget::button(widget::text(
+                    watcher.label.clone(),
+                ))));
             }
         }
 
@@ -148,9 +152,12 @@ impl Application for YourApp {
     }
 
     fn view_window(&self, _id: Id) -> Element<Self::Message> {
-        let ram_watcher = self.watchers.iter().find(|x| x.id == WatcherId::RamUsage);
+        let is_ram_checked = match self.watchers.iter().find(|x| x.id == WatcherId::RamUsage) {
+            Some(w) => w.show,
+            None => false,
+        };
 
-        let is_ram_checked = match ram_watcher {
+        let is_storage_checked = match self.watchers.iter().find(|x| x.id == WatcherId::DiskUsage) {
             Some(w) => w.show,
             None => false,
         };
@@ -168,6 +175,17 @@ impl Application for YourApp {
                 widget::toggler(None, is_ram_checked, |value| {
                     Message::ToggleWatcher(Watcher {
                         id: WatcherId::RamUsage,
+                        show: value,
+                        label: "".into(),
+                    })
+                }),
+            ))
+            .spacing(5)
+            .add(settings::item(
+                fl!("disk-usage"),
+                widget::toggler(None, is_storage_checked, |value| {
+                    Message::ToggleWatcher(Watcher {
+                        id: WatcherId::DiskUsage,
                         show: value,
                         label: "".into(),
                     })
@@ -208,25 +226,25 @@ impl Application for YourApp {
             Message::ToggleExampleRow(toggled) => self.example_row = toggled,
             Message::ToggleWatcher(mut watcher) => {
                 if watcher.show {
-                    if watcher.id == WatcherId::RamUsage {
-                        watcher.label = self.get_ram_usage()
-                    }
+                    watcher.label = match watcher.id {
+                        WatcherId::RamUsage => get_ram_usage(),
+                        WatcherId::DiskUsage => get_storage_usage(),
+                    };
+
                     self.watchers.push(watcher);
                 } else {
                     self.watchers.retain(|x| x.id != watcher.id);
                 }
             }
             Message::Tick => {
-                let ram_usage = self.get_ram_usage();
-
-                let ram_watcher = self
-                    .watchers
-                    .iter_mut()
-                    .find(|x| x.id == WatcherId::RamUsage);
-
-                if ram_watcher.is_some() {
-                    let ram_watcher = ram_watcher.unwrap();
-                    ram_watcher.label = ram_usage;
+                for watcher in &mut self.watchers {
+                    watcher.label = match watcher.id {
+                        WatcherId::RamUsage => {
+                            let ram_text = get_ram_usage();
+                            ram_text.to_owned()
+                        }
+                        WatcherId::DiskUsage => get_storage_usage(),
+                    }
                 }
             }
         }
