@@ -16,6 +16,7 @@ use crate::fl;
 pub enum WatcherType {
     Ram,
     Disk(String),
+    MaxTemp,
 }
 
 #[derive(Debug, Clone)]
@@ -83,9 +84,19 @@ fn get_disks() -> Vec<(String, String)> {
     disk_availables
 }
 
-/// This is the enum that contains all the possible variants that your application will need to transmit messages.
-/// This is used to communicate between the different parts of your application.
-/// If your application does not need to send messages, you can use an empty enum or `()`.
+fn get_max_temp() -> String {
+    let mut components = sysinfo::Components::new();
+    components.refresh_list();
+
+    let max_temp = components
+        .iter()
+        .map(|x| x.temperature() as u32)
+        .max()
+        .unwrap_or(0);
+
+    format!("Max temp: {}°C", max_temp)
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     TogglePopup,
@@ -94,14 +105,6 @@ pub enum Message {
     Tick,
 }
 
-/// Implement the `Application` trait for your application.
-/// This is where you define the behavior of your application.
-///
-/// The `Application` trait requires you to define the following types and constants:
-/// - `Executor` is the async executor that will be used to run your application's commands.
-/// - `Flags` is the data that your application needs to use before it starts.
-/// - `Message` is the enum that contains all the possible variants that your application will need to transmit messages.
-/// - `APP_ID` is the unique identifier of your application.
 impl Application for YourApp {
     type Executor = cosmic::executor::Default;
 
@@ -119,13 +122,6 @@ impl Application for YourApp {
         &mut self.core
     }
 
-    /// This is the entry point of your application, it is where you initialize your application.
-    ///
-    /// Any work that needs to be done before the application starts should be done here.
-    ///
-    /// - `core` is used to passed on for you by libcosmic to use in the core of your own application.
-    /// - `flags` is used to pass in any data that your application needs to use before it starts.
-    /// - `Command` type is used to send messages to your application. `Command::none()` can be used to send no messages to your application.
     fn init(core: Core, _flags: Self::Flags) -> (Self, Command<Self::Message>) {
         let app = YourApp {
             core,
@@ -139,12 +135,6 @@ impl Application for YourApp {
         Some(Message::PopupClosed(id))
     }
 
-    /// This is the main view of your application, it is the root of your widget tree.
-    ///
-    /// The `Element` type is used to represent the visual elements of your application,
-    /// it has a `Message` associated with it, which dictates what type of message it can send.
-    ///
-    /// To get a better sense of which widgets are available, check out the `widget` module.
     fn view(&self) -> Element<Self::Message> {
         let mut children = vec![];
 
@@ -176,6 +166,15 @@ impl Application for YourApp {
             .watchers
             .iter()
             .find(|x| x.watcher_type == WatcherType::Ram)
+        {
+            Some(w) => w.show,
+            None => false,
+        };
+
+        let is_max_temp_checked = match self
+            .watchers
+            .iter()
+            .find(|x| x.watcher_type == WatcherType::MaxTemp)
         {
             Some(w) => w.show,
             None => false,
@@ -218,7 +217,16 @@ impl Application for YourApp {
 
         let content_list = widget::list_column()
             .padding(5)
-            .spacing(0)
+            .add(settings::item(
+                fl!("max-temp"),
+                widget::toggler(None, is_max_temp_checked, |value| {
+                    Message::ToggleWatcher(Watcher {
+                        watcher_type: WatcherType::MaxTemp,
+                        show: value,
+                        label: "".into(),
+                    })
+                }),
+            ))
             .spacing(5)
             .add(settings::item(
                 fl!("ram-usage"),
@@ -237,9 +245,6 @@ impl Application for YourApp {
         self.core.applet.popup_container(content_list).into()
     }
 
-    /// Application messages are handled here. The application state can be modified based on
-    /// what message was received. Commands may be returned for asynchronous execution on a
-    /// background thread managed by the application's executor.
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
             Message::TogglePopup => {
@@ -270,6 +275,7 @@ impl Application for YourApp {
                     watcher.label = match watcher.watcher_type {
                         WatcherType::Ram => get_ram_usage(),
                         WatcherType::Disk(ref name) => get_storage_usage(name.clone()),
+                        WatcherType::MaxTemp => get_max_temp(),
                     };
 
                     self.watchers.push(watcher);
@@ -286,6 +292,7 @@ impl Application for YourApp {
                             ram_text.to_owned()
                         }
                         WatcherType::Disk(ref name) => get_storage_usage(name.clone()),
+                        WatcherType::MaxTemp => get_max_temp(),
                     }
                 }
             }
