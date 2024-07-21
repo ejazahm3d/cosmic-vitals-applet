@@ -5,11 +5,22 @@ use cosmic::iced::wayland::popup::{destroy_popup, get_popup};
 use cosmic::iced::window::Id;
 use cosmic::iced::{time, Alignment, Limits, Subscription};
 use cosmic::iced_style::application;
-use cosmic::prelude::CollectionWidget;
 use cosmic::widget::{self, settings};
 use cosmic::{Application, Element, Theme};
 
 use crate::fl;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WatcherId {
+    RamUsage,
+}
+
+#[derive(Debug, Clone)]
+pub struct Watcher {
+    pub id: WatcherId,
+    pub show: bool,
+    pub label: String,
+}
 
 /// This is the struct that represents your application.
 /// It is used to define the data that will be used by your application.
@@ -21,9 +32,21 @@ pub struct YourApp {
     popup: Option<Id>,
     /// Example row toggler.
     example_row: bool,
-    ram_usage: bool,
-    ram_usage_text: String,
     system: sysinfo::System,
+    watchers: Vec<Watcher>,
+}
+
+impl YourApp {
+    fn get_ram_usage(&mut self) -> String {
+        self.system.refresh_memory();
+        let ram_usage_text = format!(
+            "{:.2} GB / {:.2} GB",
+            self.system.used_memory() as f64 / 1000.0 / 1000.0 / 1000.0,
+            self.system.total_memory() as f64 / 1000.0 / 1000.0 / 1000.0
+        );
+
+        ram_usage_text
+    }
 }
 
 /// This is the enum that contains all the possible variants that your application will need to transmit messages.
@@ -34,7 +57,7 @@ pub enum Message {
     TogglePopup,
     PopupClosed(Id),
     ToggleExampleRow(bool),
-    ToggleRamUsage(bool),
+    ToggleWatcher(Watcher),
     Tick,
 }
 
@@ -73,19 +96,17 @@ impl Application for YourApp {
     fn init(core: Core, _flags: Self::Flags) -> (Self, Command<Self::Message>) {
         let mut system = sysinfo::System::new();
         system.refresh_memory();
-        let s = &system;
+        // let s = &system;
 
-        let ram_usage_text = format!(
-            "{:.2} GB / {:.2} GB",
-            s.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
-            s.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0
-        );
+        // let ram_usage_text = format!(
+        //     "{:.2} GB / {:.2} GB",
+        //     s.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
+        //     s.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0
+        // );
 
         let app = YourApp {
             core,
             system,
-            ram_usage_text,
-            ram_usage: true,
             ..Default::default()
         };
 
@@ -103,12 +124,15 @@ impl Application for YourApp {
     ///
     /// To get a better sense of which widgets are available, check out the `widget` module.
     fn view(&self) -> Element<Self::Message> {
-        let content_list = widget::row::<Self::Message>()
-            .push_maybe(if self.ram_usage {
-                Some(widget::text(self.ram_usage_text.clone()))
-            } else {
-                None
-            })
+        let mut children = vec![];
+
+        for watcher in &self.watchers {
+            if watcher.show {
+                children.push(Element::from(widget::text(watcher.label.clone())));
+            }
+        }
+
+        let content_list = widget::row::with_children(children)
             .spacing(5)
             .push(
                 widget::button(widget::icon::from_name("display-symbolic"))
@@ -124,6 +148,13 @@ impl Application for YourApp {
     }
 
     fn view_window(&self, _id: Id) -> Element<Self::Message> {
+        let ram_watcher = self.watchers.iter().find(|x| x.id == WatcherId::RamUsage);
+
+        let is_ram_checked = match ram_watcher {
+            Some(w) => w.show,
+            None => false,
+        };
+
         let content_list = widget::list_column()
             .padding(5)
             .spacing(0)
@@ -134,7 +165,13 @@ impl Application for YourApp {
             .spacing(5)
             .add(settings::item(
                 fl!("ram-usage"),
-                widget::toggler(None, self.ram_usage, Message::ToggleRamUsage),
+                widget::toggler(None, is_ram_checked, |value| {
+                    Message::ToggleWatcher(Watcher {
+                        id: WatcherId::RamUsage,
+                        show: value,
+                        label: "".into(),
+                    })
+                }),
             ));
 
         self.core.applet.popup_container(content_list).into()
@@ -169,16 +206,28 @@ impl Application for YourApp {
                 }
             }
             Message::ToggleExampleRow(toggled) => self.example_row = toggled,
-            Message::ToggleRamUsage(toggled) => self.ram_usage = toggled,
+            Message::ToggleWatcher(mut watcher) => {
+                if watcher.show {
+                    if watcher.id == WatcherId::RamUsage {
+                        watcher.label = self.get_ram_usage()
+                    }
+                    self.watchers.push(watcher);
+                } else {
+                    self.watchers.retain(|x| x.id != watcher.id);
+                }
+            }
             Message::Tick => {
-                self.system.refresh_memory();
-                let s = &self.system;
+                let ram_usage = self.get_ram_usage();
 
-                self.ram_usage_text = format!(
-                    "{:.2} GB / {:.2} GB",
-                    s.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
-                    s.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0
-                );
+                let ram_watcher = self
+                    .watchers
+                    .iter_mut()
+                    .find(|x| x.id == WatcherId::RamUsage);
+
+                if ram_watcher.is_some() {
+                    let ram_watcher = ram_watcher.unwrap();
+                    ram_watcher.label = ram_usage;
+                }
             }
         }
         Command::none()
