@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=CosmicVitalsApplet
+Exec=cosmic-vitals-applet %F
+Terminal=false
+Type=Application
+StartupNotify=true
+Icon=com.example.CosmicVitalsApplet
+Categories=COSMIC;Utility;
+Keywords=Folder;Manager;
+MimeType=inode/directory;
+X-CosmicApplet=true
+X-CosmicHoverPopup=Auto
