@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+use std::collections::HashMap;
+
 use cosmic::app::{Command, Core};
 use cosmic::iced::wayland::popup::{destroy_popup, get_popup};
 use cosmic::iced::window::Id;
@@ -10,15 +12,15 @@ use cosmic::{Application, Element, Theme};
 
 use crate::fl;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum WatcherId {
-    RamUsage,
-    DiskUsage,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum WatcherType {
+    Ram,
+    Disk(String),
 }
 
 #[derive(Debug, Clone)]
 pub struct Watcher {
-    pub id: WatcherId,
+    pub watcher_type: WatcherType,
     pub show: bool,
     pub label: String,
 }
@@ -31,35 +33,54 @@ pub struct YourApp {
     core: Core,
     /// The popup id.
     popup: Option<Id>,
-    /// Example row toggler.
-    example_row: bool,
     watchers: Vec<Watcher>,
+}
+
+fn to_gb(bytes: u64) -> f64 {
+    bytes as f64 / 1000.0 / 1000.0 / 1000.0
 }
 
 fn get_ram_usage() -> String {
     let mut system = sysinfo::System::new();
     system.refresh_memory();
-    let ram_usage_text = format!(
-        "RAM {:.2} GB",
-        system.used_memory() as f64 / 1000.0 / 1000.0 / 1000.0,
-    );
+    let ram_usage_text = format!("RAM {:.2} GB", to_gb(system.used_memory()));
 
     ram_usage_text
 }
 
-fn get_storage_usage() -> String {
+fn get_storage_usage(name: String) -> String {
     let mut disks = sysinfo::Disks::new();
     disks.refresh_list();
     let mut storage_usage_text = String::from("");
     for disk in &mut disks {
-        if disk.name().eq("/dev/nvme0n1p3") {
-            storage_usage_text = format!(
-                "Disk {:.2} GB",
-                disk.available_space() as f64 / 1000.0 / 1000.0 / 1000.0
-            );
+        if disk.name().eq(name.as_str()) {
+            storage_usage_text = format!("Disk {:.2} GB", to_gb(disk.available_space()));
         }
     }
     storage_usage_text
+}
+
+fn get_disks() -> Vec<(String, String)> {
+    let mut disks = sysinfo::Disks::new();
+    disks.refresh_list();
+
+    let mut disk_availables: HashMap<String, String> = HashMap::new();
+
+    for disk in &mut disks {
+        disk_availables.insert(
+            disk.name().to_str().unwrap().to_string(),
+            to_gb(disk.available_space()).to_string(),
+        );
+    }
+
+    let mut disk_availables: Vec<(String, String)> = disk_availables
+        .into_iter()
+        .map(|(x, y)| (x.clone(), y.clone()))
+        .collect();
+
+    disk_availables.sort_by(|a, b| a.1.cmp(&b.1));
+
+    disk_availables
 }
 
 /// This is the enum that contains all the possible variants that your application will need to transmit messages.
@@ -69,7 +90,6 @@ fn get_storage_usage() -> String {
 pub enum Message {
     TogglePopup,
     PopupClosed(Id),
-    ToggleExampleRow(bool),
     ToggleWatcher(Watcher),
     Tick,
 }
@@ -152,45 +172,67 @@ impl Application for YourApp {
     }
 
     fn view_window(&self, _id: Id) -> Element<Self::Message> {
-        let is_ram_checked = match self.watchers.iter().find(|x| x.id == WatcherId::RamUsage) {
+        let is_ram_checked = match self
+            .watchers
+            .iter()
+            .find(|x| x.watcher_type == WatcherType::Ram)
+        {
             Some(w) => w.show,
             None => false,
         };
 
-        let is_storage_checked = match self.watchers.iter().find(|x| x.id == WatcherId::DiskUsage) {
-            Some(w) => w.show,
-            None => false,
-        };
+        let mut disks_children = vec![];
+
+        let disks = get_disks();
+
+        for (name, space_available) in disks {
+            let is_storage_checked = match self
+                .watchers
+                .iter()
+                .find(|x| x.watcher_type == WatcherType::Disk(name.clone()))
+            {
+                Some(w) => w.show,
+                None => false,
+            };
+
+            let formatted_name = format!(
+                "{} - ({:.2} GB)",
+                name,
+                space_available.parse::<f64>().unwrap()
+            );
+
+            let item = Element::from(widget::settings::item(
+                formatted_name,
+                widget::toggler(None, is_storage_checked, move |value| {
+                    Message::ToggleWatcher(Watcher {
+                        watcher_type: WatcherType::Disk(name.clone()),
+                        show: value,
+                        label: format!("{} - {}", name, space_available),
+                    })
+                }),
+            ));
+            disks_children.push(item);
+        }
+
+        let disks_list = widget::column::with_children::<Self::Message>(disks_children).spacing(5);
 
         let content_list = widget::list_column()
             .padding(5)
             .spacing(0)
-            .add(settings::item(
-                fl!("example-row"),
-                widget::toggler(None, self.example_row, Message::ToggleExampleRow),
-            ))
             .spacing(5)
             .add(settings::item(
                 fl!("ram-usage"),
                 widget::toggler(None, is_ram_checked, |value| {
                     Message::ToggleWatcher(Watcher {
-                        id: WatcherId::RamUsage,
+                        watcher_type: WatcherType::Ram,
                         show: value,
                         label: "".into(),
                     })
                 }),
             ))
             .spacing(5)
-            .add(settings::item(
-                fl!("disk-usage"),
-                widget::toggler(None, is_storage_checked, |value| {
-                    Message::ToggleWatcher(Watcher {
-                        id: WatcherId::DiskUsage,
-                        show: value,
-                        label: "".into(),
-                    })
-                }),
-            ));
+            .add(settings::item(fl!("disk-usage"), widget::text("")))
+            .add(disks_list);
 
         self.core.applet.popup_container(content_list).into()
     }
@@ -223,27 +265,27 @@ impl Application for YourApp {
                     self.popup = None;
                 }
             }
-            Message::ToggleExampleRow(toggled) => self.example_row = toggled,
             Message::ToggleWatcher(mut watcher) => {
                 if watcher.show {
-                    watcher.label = match watcher.id {
-                        WatcherId::RamUsage => get_ram_usage(),
-                        WatcherId::DiskUsage => get_storage_usage(),
+                    watcher.label = match watcher.watcher_type {
+                        WatcherType::Ram => get_ram_usage(),
+                        WatcherType::Disk(ref name) => get_storage_usage(name.clone()),
                     };
 
                     self.watchers.push(watcher);
                 } else {
-                    self.watchers.retain(|x| x.id != watcher.id);
+                    self.watchers
+                        .retain(|x| x.watcher_type != watcher.watcher_type);
                 }
             }
             Message::Tick => {
                 for watcher in &mut self.watchers {
-                    watcher.label = match watcher.id {
-                        WatcherId::RamUsage => {
+                    watcher.label = match watcher.watcher_type {
+                        WatcherType::Ram => {
                             let ram_text = get_ram_usage();
                             ram_text.to_owned()
                         }
-                        WatcherId::DiskUsage => get_storage_usage(),
+                        WatcherType::Disk(ref name) => get_storage_usage(name.clone()),
                     }
                 }
             }
