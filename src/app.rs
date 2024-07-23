@@ -171,23 +171,22 @@ impl YourApp {
     ) -> Vec<Element<'a, Message>> {
         let mut children = vec![];
 
-        for (name, ram) in stats {
+        for (name, value) in stats {
             let stat_type = fn_name(name.clone());
-            let is_ram_checked = match self.stats.iter().find(|x| x.stat_type == stat_type.clone())
-            {
+            let is_checked = match self.stats.iter().find(|x| x.stat_type == stat_type.clone()) {
                 Some(w) => w.show,
                 None => false,
             };
 
-            let formatted_name = format!("{} - ({} GB)", name.clone(), ram);
+            let formatted_name = format!("{} - ({} GB)", name.clone(), value);
 
             let item = Element::from(item(
                 formatted_name,
-                toggler(None, is_ram_checked, move |value| {
+                toggler(None, is_checked, move |value| {
                     Message::ToggleStat(Stat {
                         stat_type: stat_type.clone(),
                         show: value,
-                        label: format!("{} - {}", name, ram),
+                        label: format!("{} - {}", name, value),
                     })
                 }),
             ));
