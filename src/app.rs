@@ -161,6 +161,41 @@ pub enum Message {
     Tick,
 }
 
+impl YourApp {
+    fn stat_list<'a>(
+        &self,
+        stats: Vec<(String, String)>,
+        fn_name: impl Fn(String) -> StatType,
+    ) -> Vec<Element<'a, Message>> {
+        let mut children = vec![];
+
+        for (name, ram) in stats {
+            let stat_type = fn_name(name.clone());
+            let is_ram_checked = match self.stats.iter().find(|x| x.stat_type == stat_type.clone())
+            {
+                Some(w) => w.show,
+                None => false,
+            };
+
+            let formatted_name = format!("{} - ({} GB)", name.clone(), ram);
+
+            let item = Element::from(widget::settings::item(
+                formatted_name,
+                widget::toggler(None, is_ram_checked, move |value| {
+                    Message::ToggleStat(Stat {
+                        stat_type: stat_type.clone(),
+                        show: value,
+                        label: format!("{} - {}", name, ram),
+                    })
+                }),
+            ));
+            children.push(item);
+        }
+
+        children
+    }
+}
+
 impl Application for YourApp {
     type Executor = cosmic::executor::Default;
 
@@ -218,99 +253,17 @@ impl Application for YourApp {
     }
 
     fn view_window(&self, _id: Id) -> Element<Self::Message> {
-        let mut ram_children = vec![];
+        let ram_list =
+            widget::column::with_children(self.stat_list(get_ram_stats(), StatType::Ram))
+                .padding(5)
+                .spacing(5);
 
-        for (name, ram) in get_ram_stats() {
-            let is_ram_checked = match self
-                .stats
-                .iter()
-                .find(|x| x.stat_type == StatType::Ram(name.clone()))
-            {
-                Some(w) => w.show,
-                None => false,
-            };
+        let disks_list =
+            widget::column::with_children(self.stat_list(get_disks(), StatType::Disk)).spacing(5);
 
-            let formatted_name = format!("{} - ({} GB)", name, ram);
-
-            let item = Element::from(widget::settings::item(
-                formatted_name,
-                widget::toggler(None, is_ram_checked, move |value| {
-                    Message::ToggleStat(Stat {
-                        stat_type: StatType::Ram(name.clone()),
-                        show: value,
-                        label: format!("{} - {}", name, ram),
-                    })
-                }),
-            ));
-            ram_children.push(item);
-        }
-
-        let ram_list = widget::column::with_children(ram_children)
-            .padding(5)
-            .spacing(5);
-
-        let mut disks_children = vec![];
-
-        for (name, space_available) in get_disks() {
-            let is_storage_checked = match self
-                .stats
-                .iter()
-                .find(|x| x.stat_type == StatType::Disk(name.clone()))
-            {
-                Some(w) => w.show,
-                None => false,
-            };
-
-            let formatted_name = format!(
-                "{} - ({:.2} GB)",
-                name,
-                space_available.parse::<f64>().unwrap()
-            );
-
-            let item = Element::from(widget::settings::item(
-                formatted_name,
-                widget::toggler(None, is_storage_checked, move |value| {
-                    Message::ToggleStat(Stat {
-                        stat_type: StatType::Disk(name.clone()),
-                        show: value,
-                        label: format!("{} - {}", name, space_available),
-                    })
-                }),
-            ));
-            disks_children.push(item);
-        }
-
-        let disks_list = widget::column::with_children::<Self::Message>(disks_children).spacing(5);
-
-        let mut temp_children = vec![];
-
-        for (name, temp) in get_temps() {
-            let is_temp_checked = match self
-                .stats
-                .iter()
-                .find(|x| x.stat_type == StatType::MaxTemp(name.clone()))
-            {
-                Some(w) => w.show,
-                None => false,
-            };
-
-            let formatted_name = format!("{} - ({}°C)", name.clone(), temp);
-
-            let item = Element::from(widget::settings::item(
-                formatted_name,
-                widget::toggler(None, is_temp_checked, move |value| {
-                    Message::ToggleStat(Stat {
-                        stat_type: StatType::MaxTemp(name.clone()),
-                        show: value,
-                        label: "".into(),
-                    })
-                }),
-            ));
-
-            temp_children.push(item);
-        }
-
-        let temp_list = widget::column::with_children(temp_children).spacing(5);
+        let temp_list =
+            widget::column::with_children(self.stat_list(get_temps(), StatType::MaxTemp))
+                .spacing(5);
 
         let content_list = widget::list_column()
             .padding(5)
