@@ -7,7 +7,9 @@ use cosmic::iced::wayland::popup::{destroy_popup, get_popup};
 use cosmic::iced::window::Id;
 use cosmic::iced::{time, Alignment, Limits, Subscription};
 use cosmic::iced_style::application;
-use cosmic::widget::{self, settings};
+use cosmic::widget::settings::item;
+use cosmic::widget::{button, column, icon, list_column, row};
+use cosmic::widget::{text, toggler};
 use cosmic::{Application, Element, Theme};
 
 use crate::fl;
@@ -179,9 +181,9 @@ impl YourApp {
 
             let formatted_name = format!("{} - ({} GB)", name.clone(), ram);
 
-            let item = Element::from(widget::settings::item(
+            let item = Element::from(item(
                 formatted_name,
-                widget::toggler(None, is_ram_checked, move |value| {
+                toggler(None, is_ram_checked, move |value| {
                     Message::ToggleStat(Stat {
                         stat_type: stat_type.clone(),
                         show: value,
@@ -231,18 +233,13 @@ impl Application for YourApp {
 
         for stat in &self.stats {
             if stat.show {
-                children.push(Element::from(widget::button(widget::text(
-                    stat.label.clone(),
-                ))));
+                children.push(Element::from(button(text(stat.label.clone()))));
             }
         }
 
-        let content_list = widget::row::with_children(children)
+        let content_list = row::with_children(children)
             .spacing(5)
-            .push(
-                widget::button(widget::icon::from_name("display-symbolic"))
-                    .on_press(Message::TogglePopup),
-            )
+            .push(button(icon::from_name("display-symbolic")).on_press(Message::TogglePopup))
             .align_items(Alignment::Center);
 
         content_list.into()
@@ -253,27 +250,25 @@ impl Application for YourApp {
     }
 
     fn view_window(&self, _id: Id) -> Element<Self::Message> {
-        let ram_list =
-            widget::column::with_children(self.stat_list(get_ram_stats(), StatType::Ram))
-                .padding(5)
-                .spacing(5);
+        let ram_list = column::with_children(self.stat_list(get_ram_stats(), StatType::Ram))
+            .padding(5)
+            .spacing(5);
 
         let disks_list =
-            widget::column::with_children(self.stat_list(get_disks(), StatType::Disk)).spacing(5);
+            column::with_children(self.stat_list(get_disks(), StatType::Disk)).spacing(5);
 
         let temp_list =
-            widget::column::with_children(self.stat_list(get_temps(), StatType::MaxTemp))
-                .spacing(5);
+            column::with_children(self.stat_list(get_temps(), StatType::MaxTemp)).spacing(5);
 
-        let content_list = widget::list_column()
+        let content_list = list_column()
             .padding(5)
-            .add(settings::item(fl!("max-temp"), widget::text("")))
+            .add(item(fl!("max-temp"), text("")))
             .spacing(5)
             .add(temp_list)
-            .add(settings::item(fl!("ram-usage"), widget::text("")))
+            .add(item(fl!("ram-usage"), text("")))
             .add(ram_list)
             .spacing(5)
-            .add(settings::item(fl!("disk-usage"), widget::text("")))
+            .add(item(fl!("disk-usage"), text("")))
             .add(disks_list);
 
         self.core.applet.popup_container(content_list).into()
