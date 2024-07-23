@@ -41,7 +41,7 @@ fn to_gb(bytes: u64) -> f64 {
     bytes as f64 / 1000.0 / 1000.0 / 1000.0
 }
 
-fn get_ram_usage(name: String) -> String {
+fn get_ram_usage(name: &str) -> String {
     let mut ram_usage_text = String::from("");
 
     for (ram_name, ram) in get_ram_stats() {
@@ -53,12 +53,12 @@ fn get_ram_usage(name: String) -> String {
     ram_usage_text
 }
 
-fn get_storage_usage(name: String) -> String {
+fn get_storage_usage(name: &str) -> String {
     let mut disks = sysinfo::Disks::new();
     disks.refresh_list();
     let mut storage_usage_text = String::from("");
     for disk in &mut disks {
-        if disk.name().eq(name.as_str()) {
+        if disk.name().eq(name) {
             storage_usage_text = format!("Disk {:.2} GB", to_gb(disk.available_space()));
         }
     }
@@ -332,8 +332,8 @@ impl Application for YourApp {
             Message::ToggleWatcher(mut watcher) => {
                 if watcher.show {
                     watcher.label = match watcher.watcher_type {
-                        WatcherType::Ram(ref name) => get_ram_usage(name.clone()),
-                        WatcherType::Disk(ref name) => get_storage_usage(name.clone()),
+                        WatcherType::Ram(ref name) => get_ram_usage(name),
+                        WatcherType::Disk(ref name) => get_storage_usage(name),
                         WatcherType::MaxTemp => get_max_temp(),
                     };
 
@@ -347,10 +347,10 @@ impl Application for YourApp {
                 for watcher in &mut self.watchers {
                     watcher.label = match watcher.watcher_type {
                         WatcherType::Ram(ref name) => {
-                            let ram_text = get_ram_usage(name.clone());
+                            let ram_text = get_ram_usage(name);
                             ram_text.to_owned()
                         }
-                        WatcherType::Disk(ref name) => get_storage_usage(name.clone()),
+                        WatcherType::Disk(ref name) => get_storage_usage(name),
                         WatcherType::MaxTemp => get_max_temp(),
                     }
                 }
