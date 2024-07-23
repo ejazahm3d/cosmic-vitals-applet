@@ -14,7 +14,7 @@ use crate::fl;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum WatcherType {
-    Ram,
+    Ram(String),
     Disk(String),
     MaxTemp,
 }
@@ -41,10 +41,14 @@ fn to_gb(bytes: u64) -> f64 {
     bytes as f64 / 1000.0 / 1000.0 / 1000.0
 }
 
-fn get_ram_usage() -> String {
-    let mut system = sysinfo::System::new();
-    system.refresh_memory();
-    let ram_usage_text = format!("RAM {:.2} GB", to_gb(system.used_memory()));
+fn get_ram_usage(name: String) -> String {
+    let mut ram_usage_text = String::from("");
+
+    for (ram_name, ram) in get_ram_stats() {
+        if name == ram_name {
+            ram_usage_text = format!("RAM {} GB", ram);
+        }
+    }
 
     ram_usage_text
 }
@@ -59,6 +63,49 @@ fn get_storage_usage(name: String) -> String {
         }
     }
     storage_usage_text
+}
+
+fn get_ram_stats() -> Vec<(String, String)> {
+    let mut ram_stats = vec![];
+    let mut system = sysinfo::System::new();
+    system.refresh_memory();
+
+    ram_stats.push((
+        fl!("total-ram"),
+        format!("{:.2} GB", to_gb(system.total_memory())),
+    ));
+
+    ram_stats.push((
+        fl!("used-ram"),
+        format!("{:.2} GB", to_gb(system.used_memory())),
+    ));
+
+    ram_stats.push((
+        fl!("free-ram"),
+        format!("{:.2} GB", to_gb(system.free_memory())),
+    ));
+
+    ram_stats.push((
+        fl!("available-ram"),
+        format!("{:.2} GB", to_gb(system.available_memory())),
+    ));
+
+    ram_stats.push((
+        fl!("free-swap"),
+        format!("{:.2} GB", to_gb(system.free_swap())),
+    ));
+
+    ram_stats.push((
+        fl!("total-swap"),
+        format!("{:.2} GB", to_gb(system.total_swap())),
+    ));
+
+    ram_stats.push((
+        fl!("used-swap"),
+        format!("{:.2} GB", to_gb(system.used_swap())),
+    ));
+
+    ram_stats
 }
 
 fn get_disks() -> Vec<(String, String)> {
@@ -162,14 +209,36 @@ impl Application for YourApp {
     }
 
     fn view_window(&self, _id: Id) -> Element<Self::Message> {
-        let is_ram_checked = match self
-            .watchers
-            .iter()
-            .find(|x| x.watcher_type == WatcherType::Ram)
-        {
-            Some(w) => w.show,
-            None => false,
-        };
+        let mut ram_children = vec![];
+
+        for (name, ram) in get_ram_stats() {
+            let is_ram_checked = match self
+                .watchers
+                .iter()
+                .find(|x| x.watcher_type == WatcherType::Ram(name.clone()))
+            {
+                Some(w) => w.show,
+                None => false,
+            };
+
+            let formatted_name = format!("{} - ({} GB)", name, ram);
+
+            let item = Element::from(widget::settings::item(
+                formatted_name,
+                widget::toggler(None, is_ram_checked, move |value| {
+                    Message::ToggleWatcher(Watcher {
+                        watcher_type: WatcherType::Ram(name.clone()),
+                        show: value,
+                        label: format!("{} - {}", name, ram),
+                    })
+                }),
+            ));
+            ram_children.push(item);
+        }
+
+        let ram_list = widget::column::with_children(ram_children)
+            .padding(5)
+            .spacing(5);
 
         let is_max_temp_checked = match self
             .watchers
@@ -182,9 +251,7 @@ impl Application for YourApp {
 
         let mut disks_children = vec![];
 
-        let disks = get_disks();
-
-        for (name, space_available) in disks {
+        for (name, space_available) in get_disks() {
             let is_storage_checked = match self
                 .watchers
                 .iter()
@@ -228,16 +295,8 @@ impl Application for YourApp {
                 }),
             ))
             .spacing(5)
-            .add(settings::item(
-                fl!("ram-usage"),
-                widget::toggler(None, is_ram_checked, |value| {
-                    Message::ToggleWatcher(Watcher {
-                        watcher_type: WatcherType::Ram,
-                        show: value,
-                        label: "".into(),
-                    })
-                }),
-            ))
+            .add(settings::item(fl!("ram-usage"), widget::text("")))
+            .add(ram_list)
             .spacing(5)
             .add(settings::item(fl!("disk-usage"), widget::text("")))
             .add(disks_list);
@@ -273,7 +332,7 @@ impl Application for YourApp {
             Message::ToggleWatcher(mut watcher) => {
                 if watcher.show {
                     watcher.label = match watcher.watcher_type {
-                        WatcherType::Ram => get_ram_usage(),
+                        WatcherType::Ram(ref name) => get_ram_usage(name.clone()),
                         WatcherType::Disk(ref name) => get_storage_usage(name.clone()),
                         WatcherType::MaxTemp => get_max_temp(),
                     };
@@ -287,8 +346,8 @@ impl Application for YourApp {
             Message::Tick => {
                 for watcher in &mut self.watchers {
                     watcher.label = match watcher.watcher_type {
-                        WatcherType::Ram => {
-                            let ram_text = get_ram_usage();
+                        WatcherType::Ram(ref name) => {
+                            let ram_text = get_ram_usage(name.clone());
                             ram_text.to_owned()
                         }
                         WatcherType::Disk(ref name) => get_storage_usage(name.clone()),
