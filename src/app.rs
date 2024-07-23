@@ -13,15 +13,15 @@ use cosmic::{Application, Element, Theme};
 use crate::fl;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum WatcherType {
+pub enum StatType {
     Ram(String),
     Disk(String),
-    MaxTemp,
+    MaxTemp(String),
 }
 
 #[derive(Debug, Clone)]
-pub struct Watcher {
-    pub watcher_type: WatcherType,
+pub struct Stat {
+    pub stat_type: StatType,
     pub show: bool,
     pub label: String,
 }
@@ -34,7 +34,7 @@ pub struct YourApp {
     core: Core,
     /// The popup id.
     popup: Option<Id>,
-    watchers: Vec<Watcher>,
+    stats: Vec<Stat>,
 }
 
 fn to_gb(bytes: u64) -> f64 {
@@ -131,24 +131,33 @@ fn get_disks() -> Vec<(String, String)> {
     disk_availables
 }
 
-fn get_max_temp() -> String {
+fn get_temps() -> Vec<(String, String)> {
     let mut components = sysinfo::Components::new();
     components.refresh_list();
 
-    let max_temp = components
+    let temps = components
         .iter()
-        .map(|x| x.temperature() as u32)
-        .max()
-        .unwrap_or(0);
+        .map(|x| (x.label().to_string(), x.temperature().to_string()))
+        .collect();
 
-    format!("Max temp: {}°C", max_temp)
+    temps
+}
+
+fn get_temp_usage(name: &str) -> String {
+    for (temp_name, temp) in get_temps() {
+        if name == temp_name {
+            return temp;
+        }
+    }
+
+    String::from("")
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     TogglePopup,
     PopupClosed(Id),
-    ToggleWatcher(Watcher),
+    ToggleStat(Stat),
     Tick,
 }
 
@@ -185,10 +194,10 @@ impl Application for YourApp {
     fn view(&self) -> Element<Self::Message> {
         let mut children = vec![];
 
-        for watcher in &self.watchers {
-            if watcher.show {
+        for stat in &self.stats {
+            if stat.show {
                 children.push(Element::from(widget::button(widget::text(
-                    watcher.label.clone(),
+                    stat.label.clone(),
                 ))));
             }
         }
@@ -213,9 +222,9 @@ impl Application for YourApp {
 
         for (name, ram) in get_ram_stats() {
             let is_ram_checked = match self
-                .watchers
+                .stats
                 .iter()
-                .find(|x| x.watcher_type == WatcherType::Ram(name.clone()))
+                .find(|x| x.stat_type == StatType::Ram(name.clone()))
             {
                 Some(w) => w.show,
                 None => false,
@@ -226,8 +235,8 @@ impl Application for YourApp {
             let item = Element::from(widget::settings::item(
                 formatted_name,
                 widget::toggler(None, is_ram_checked, move |value| {
-                    Message::ToggleWatcher(Watcher {
-                        watcher_type: WatcherType::Ram(name.clone()),
+                    Message::ToggleStat(Stat {
+                        stat_type: StatType::Ram(name.clone()),
                         show: value,
                         label: format!("{} - {}", name, ram),
                     })
@@ -240,22 +249,13 @@ impl Application for YourApp {
             .padding(5)
             .spacing(5);
 
-        let is_max_temp_checked = match self
-            .watchers
-            .iter()
-            .find(|x| x.watcher_type == WatcherType::MaxTemp)
-        {
-            Some(w) => w.show,
-            None => false,
-        };
-
         let mut disks_children = vec![];
 
         for (name, space_available) in get_disks() {
             let is_storage_checked = match self
-                .watchers
+                .stats
                 .iter()
-                .find(|x| x.watcher_type == WatcherType::Disk(name.clone()))
+                .find(|x| x.stat_type == StatType::Disk(name.clone()))
             {
                 Some(w) => w.show,
                 None => false,
@@ -270,8 +270,8 @@ impl Application for YourApp {
             let item = Element::from(widget::settings::item(
                 formatted_name,
                 widget::toggler(None, is_storage_checked, move |value| {
-                    Message::ToggleWatcher(Watcher {
-                        watcher_type: WatcherType::Disk(name.clone()),
+                    Message::ToggleStat(Stat {
+                        stat_type: StatType::Disk(name.clone()),
                         show: value,
                         label: format!("{} - {}", name, space_available),
                     })
@@ -282,19 +282,41 @@ impl Application for YourApp {
 
         let disks_list = widget::column::with_children::<Self::Message>(disks_children).spacing(5);
 
-        let content_list = widget::list_column()
-            .padding(5)
-            .add(settings::item(
-                fl!("max-temp"),
-                widget::toggler(None, is_max_temp_checked, |value| {
-                    Message::ToggleWatcher(Watcher {
-                        watcher_type: WatcherType::MaxTemp,
+        let mut temp_children = vec![];
+
+        for (name, temp) in get_temps() {
+            let is_temp_checked = match self
+                .stats
+                .iter()
+                .find(|x| x.stat_type == StatType::MaxTemp(name.clone()))
+            {
+                Some(w) => w.show,
+                None => false,
+            };
+
+            let formatted_name = format!("{} - ({}°C)", name.clone(), temp);
+
+            let item = Element::from(widget::settings::item(
+                formatted_name,
+                widget::toggler(None, is_temp_checked, move |value| {
+                    Message::ToggleStat(Stat {
+                        stat_type: StatType::MaxTemp(name.clone()),
                         show: value,
                         label: "".into(),
                     })
                 }),
-            ))
+            ));
+
+            temp_children.push(item);
+        }
+
+        let temp_list = widget::column::with_children(temp_children).spacing(5);
+
+        let content_list = widget::list_column()
+            .padding(5)
+            .add(settings::item(fl!("max-temp"), widget::text("")))
             .spacing(5)
+            .add(temp_list)
             .add(settings::item(fl!("ram-usage"), widget::text("")))
             .add(ram_list)
             .spacing(5)
@@ -329,29 +351,28 @@ impl Application for YourApp {
                     self.popup = None;
                 }
             }
-            Message::ToggleWatcher(mut watcher) => {
-                if watcher.show {
-                    watcher.label = match watcher.watcher_type {
-                        WatcherType::Ram(ref name) => get_ram_usage(name),
-                        WatcherType::Disk(ref name) => get_storage_usage(name),
-                        WatcherType::MaxTemp => get_max_temp(),
+            Message::ToggleStat(mut stat) => {
+                if stat.show {
+                    stat.label = match stat.stat_type {
+                        StatType::Ram(ref name) => get_ram_usage(name),
+                        StatType::Disk(ref name) => get_storage_usage(name),
+                        StatType::MaxTemp(ref name) => get_temp_usage(name),
                     };
 
-                    self.watchers.push(watcher);
+                    self.stats.push(stat);
                 } else {
-                    self.watchers
-                        .retain(|x| x.watcher_type != watcher.watcher_type);
+                    self.stats.retain(|x| x.stat_type != stat.stat_type);
                 }
             }
             Message::Tick => {
-                for watcher in &mut self.watchers {
-                    watcher.label = match watcher.watcher_type {
-                        WatcherType::Ram(ref name) => {
+                for stat in &mut self.stats {
+                    stat.label = match stat.stat_type {
+                        StatType::Ram(ref name) => {
                             let ram_text = get_ram_usage(name);
                             ram_text.to_owned()
                         }
-                        WatcherType::Disk(ref name) => get_storage_usage(name),
-                        WatcherType::MaxTemp => get_max_temp(),
+                        StatType::Disk(ref name) => get_storage_usage(name),
+                        StatType::MaxTemp(ref name) => get_temp_usage(name),
                     }
                 }
             }
