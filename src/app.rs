@@ -3,12 +3,15 @@
 use std::collections::HashMap;
 
 use cosmic::app::{Command, Core};
+use cosmic::applet::menu_button;
+use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::wayland::popup::{destroy_popup, get_popup};
 use cosmic::iced::window::Id;
-use cosmic::iced::{time, Alignment, Limits, Subscription};
+use cosmic::iced::{time, Alignment, Length, Limits, Subscription};
 use cosmic::iced_style::application;
+use cosmic::iced_widget::row;
 use cosmic::widget::settings::item;
-use cosmic::widget::{button, column, icon, list_column, row};
+use cosmic::widget::{button, column, container, icon, list_column, row as row_mod};
 use cosmic::widget::{text, toggler};
 use cosmic::{Application, Element, Theme};
 
@@ -37,6 +40,7 @@ pub struct YourApp {
     /// The popup id.
     popup: Option<Id>,
     stats: Vec<Stat>,
+    ram_stat_toggle: bool,
 }
 
 fn to_gb(bytes: u64) -> f64 {
@@ -163,6 +167,7 @@ pub enum Message {
     PopupClosed(Id),
     ToggleStat(Stat),
     Tick,
+    RamStatsToggle(bool),
 }
 
 impl YourApp {
@@ -242,7 +247,7 @@ impl Application for YourApp {
             }
         }
 
-        let content_list = row::with_children(children)
+        let content_list = row_mod::with_children(children)
             .spacing(5)
             .push(button(icon::from_name("display-symbolic")).on_press(Message::TogglePopup))
             .align_items(Alignment::Center);
@@ -265,16 +270,39 @@ impl Application for YourApp {
         let temp_list =
             column::with_children(self.stat_list(get_temps(), StatType::MaxTemp)).spacing(5);
 
-        let content_list = list_column()
+        let dropdown_icon = if self.ram_stat_toggle {
+            "go-down-symbolic"
+        } else {
+            "go-next-symbolic"
+        };
+
+        let mut content_list = list_column()
             .padding(5)
             .add(item(fl!("max-temp"), text("")))
             .spacing(5)
             .add(temp_list)
-            .add(item(fl!("ram-usage"), text("")))
-            .add(ram_list)
             .spacing(5)
             .add(item(fl!("disk-usage"), text("")))
-            .add(disks_list);
+            .add(disks_list)
+            .add(
+                menu_button(row![
+                    text(fl!("ram-usage"))
+                        .size(14)
+                        .width(Length::Fill)
+                        .height(Length::Fixed(24.0))
+                        .vertical_alignment(Vertical::Center),
+                    container(icon::from_name(dropdown_icon).size(14).symbolic(true))
+                        .align_x(Horizontal::Center)
+                        .align_y(Vertical::Center)
+                        .width(Length::Fixed(24.0))
+                        .height(Length::Fixed(24.0))
+                ])
+                .on_press(Message::RamStatsToggle(!self.ram_stat_toggle)),
+            );
+
+        if self.ram_stat_toggle {
+            content_list = content_list.add(ram_list);
+        }
 
         self.core.applet.popup_container(content_list).into()
     }
@@ -326,6 +354,7 @@ impl Application for YourApp {
                     }
                 }
             }
+            Message::RamStatsToggle(toggle) => self.ram_stat_toggle = toggle,
         }
         Command::none()
     }
