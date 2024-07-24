@@ -119,7 +119,7 @@ fn get_disks() -> Vec<(String, String)> {
     for disk in &mut disks {
         disk_availables.insert(
             disk.name().to_str().unwrap().to_string(),
-            to_gb(disk.available_space()).to_string(),
+            format!("{:.2}", to_gb(disk.available_space())),
         );
     }
 
@@ -128,7 +128,7 @@ fn get_disks() -> Vec<(String, String)> {
         .map(|(x, y)| (x.clone(), y.clone()))
         .collect();
 
-    disk_availables.sort_by(|a, b| a.1.cmp(&b.1));
+    disk_availables.sort_by(|a, b| a.0.cmp(&b.0));
 
     disk_availables
 }
@@ -137,10 +137,12 @@ fn get_temps() -> Vec<(String, String)> {
     let mut components = sysinfo::Components::new();
     components.refresh_list();
 
-    let temps = components
+    let mut temps = components
         .iter()
-        .map(|x| (x.label().to_string(), x.temperature().to_string()))
-        .collect();
+        .map(|x| (x.label().to_string(), format!("{}", x.temperature() as u32)))
+        .collect::<Vec<(String, String)>>();
+
+    temps.sort_by(|a, b| a.0.cmp(&b.0));
 
     temps
 }
@@ -148,7 +150,7 @@ fn get_temps() -> Vec<(String, String)> {
 fn get_temp_usage(name: &str) -> String {
     for (temp_name, temp) in get_temps() {
         if name == temp_name {
-            return temp;
+            return format!("Temp {} °C", temp);
         }
     }
 
@@ -178,7 +180,11 @@ impl YourApp {
                 None => false,
             };
 
-            let formatted_name = format!("{} - ({} GB)", name.clone(), value);
+            let formatted_name = match stat_type {
+                StatType::Ram(ref name) => format!("{} - ({} GB)", name, value),
+                StatType::Disk(ref name) => format!("{} - ({} GB)", name, value),
+                StatType::MaxTemp(ref name) => format!("{} - ({} °C)", name, value),
+            };
 
             let item = Element::from(item(
                 formatted_name,
@@ -314,10 +320,7 @@ impl Application for YourApp {
             Message::Tick => {
                 for stat in &mut self.stats {
                     stat.label = match stat.stat_type {
-                        StatType::Ram(ref name) => {
-                            let ram_text = get_ram_usage(name);
-                            ram_text.to_owned()
-                        }
+                        StatType::Ram(ref name) => get_ram_usage(name),
                         StatType::Disk(ref name) => get_storage_usage(name),
                         StatType::MaxTemp(ref name) => get_temp_usage(name),
                     }
