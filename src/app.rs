@@ -41,6 +41,8 @@ pub struct YourApp {
     popup: Option<Id>,
     stats: Vec<Stat>,
     ram_stat_toggle: bool,
+    disk_stat_toggle: bool,
+    temp_stat_toggle: bool,
 }
 
 fn to_gb(bytes: u64) -> f64 {
@@ -168,14 +170,16 @@ pub enum Message {
     ToggleStat(Stat),
     Tick,
     RamStatsToggle(bool),
+    DiskStatsToggle(bool),
+    TempStatsToggle(bool),
 }
 
 impl YourApp {
-    fn stat_list<'a>(
+    fn stat_list(
         &self,
         stats: Vec<(String, String)>,
         fn_name: impl Fn(String) -> StatType,
-    ) -> Vec<Element<'a, Message>> {
+    ) -> Vec<Element<'_, Message>> {
         let mut children = vec![];
 
         for (name, value) in stats {
@@ -205,6 +209,33 @@ impl YourApp {
         }
 
         children
+    }
+
+    fn dropdown_menu_button(
+        &self,
+        stat_toggle: bool,
+        text_str: String,
+        on_press: Message,
+    ) -> button::Button<'_, Message> {
+        let dropdown_icon = if stat_toggle {
+            "go-down-symbolic"
+        } else {
+            "go-next-symbolic"
+        };
+
+        menu_button(row![
+            text(text_str)
+                .size(14)
+                .width(Length::Fill)
+                .height(Length::Fixed(24.0))
+                .vertical_alignment(Vertical::Center),
+            container(icon::from_name(dropdown_icon).size(14).symbolic(true))
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Center)
+                .width(Length::Fixed(24.0))
+                .height(Length::Fixed(24.0))
+        ])
+        .on_press(on_press)
     }
 }
 
@@ -270,35 +301,34 @@ impl Application for YourApp {
         let temp_list =
             column::with_children(self.stat_list(get_temps(), StatType::MaxTemp)).spacing(5);
 
-        let dropdown_icon = if self.ram_stat_toggle {
-            "go-down-symbolic"
-        } else {
-            "go-next-symbolic"
-        };
+        let mut content_list = list_column().add(self.dropdown_menu_button(
+            self.temp_stat_toggle,
+            fl!("temp-usage"),
+            Message::TempStatsToggle(!self.temp_stat_toggle),
+        ));
 
-        let mut content_list = list_column()
-            .padding(5)
-            .add(item(fl!("max-temp"), text("")))
-            .spacing(5)
-            .add(temp_list)
-            .spacing(5)
-            .add(item(fl!("disk-usage"), text("")))
-            .add(disks_list)
-            .add(
-                menu_button(row![
-                    text(fl!("ram-usage"))
-                        .size(14)
-                        .width(Length::Fill)
-                        .height(Length::Fixed(24.0))
-                        .vertical_alignment(Vertical::Center),
-                    container(icon::from_name(dropdown_icon).size(14).symbolic(true))
-                        .align_x(Horizontal::Center)
-                        .align_y(Vertical::Center)
-                        .width(Length::Fixed(24.0))
-                        .height(Length::Fixed(24.0))
-                ])
-                .on_press(Message::RamStatsToggle(!self.ram_stat_toggle)),
-            );
+        if self.temp_stat_toggle {
+            content_list = content_list.add(temp_list);
+        }
+
+        content_list = content_list.add(self.dropdown_menu_button(
+            self.disk_stat_toggle,
+            fl!("disk-usage"),
+            Message::DiskStatsToggle(!self.disk_stat_toggle),
+        ));
+
+        if self.disk_stat_toggle {
+            content_list = content_list.add(disks_list);
+        }
+
+        content_list = content_list.add(
+            self.dropdown_menu_button(
+                self.ram_stat_toggle,
+                fl!("ram-usage"),
+                Message::TempStatsToggle(!self.temp_stat_toggle),
+            )
+            .on_press(Message::RamStatsToggle(!self.ram_stat_toggle)),
+        );
 
         if self.ram_stat_toggle {
             content_list = content_list.add(ram_list);
@@ -355,6 +385,8 @@ impl Application for YourApp {
                 }
             }
             Message::RamStatsToggle(toggle) => self.ram_stat_toggle = toggle,
+            Message::DiskStatsToggle(toggle) => self.disk_stat_toggle = toggle,
+            Message::TempStatsToggle(toggle) => self.temp_stat_toggle = toggle,
         }
         Command::none()
     }

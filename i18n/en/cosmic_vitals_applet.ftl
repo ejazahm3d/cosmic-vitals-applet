@@ -1,5 +1,5 @@
 ram-usage = RAM usage
-max-temp = Max temp
+temp-usage = Temp usage
 disk-usage = Disk usage
 total-ram = Total RAM
 free-ram = Free RAM
