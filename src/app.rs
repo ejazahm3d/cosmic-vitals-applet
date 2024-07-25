@@ -8,10 +8,13 @@ use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::wayland::popup::{destroy_popup, get_popup};
 use cosmic::iced::window::Id;
 use cosmic::iced::{time, Alignment, Length, Limits, Subscription};
+use cosmic::iced_core::text::Wrap;
 use cosmic::iced_style::application;
 use cosmic::iced_widget::row;
-use cosmic::widget::settings::item;
-use cosmic::widget::{button, column, container, icon, list_column, row as row_mod};
+use cosmic::widget::settings::item_row;
+use cosmic::widget::{
+    button, column, container, horizontal_space, icon, list_column, row as row_mod,
+};
 use cosmic::widget::{text, toggler};
 use cosmic::{Application, Element, Theme};
 
@@ -148,7 +151,14 @@ fn get_temps() -> Vec<(String, String)> {
         .map(|x| (x.label().to_string(), format!("{}", x.temperature() as u32)))
         .collect::<Vec<(String, String)>>();
 
+    let max_temp = components.iter().map(|x| x.temperature() as u32).max();
+
+    let min_temp = components.iter().map(|x| x.temperature() as u32).min();
+
     temps.sort_by(|a, b| a.0.cmp(&b.0));
+
+    temps.push((fl!("max-temp"), format!("{}", max_temp.unwrap_or(0))));
+    temps.push((fl!("min-temp"), format!("{}", min_temp.unwrap_or(0))));
 
     temps
 }
@@ -189,22 +199,30 @@ impl YourApp {
                 None => false,
             };
 
-            let formatted_name = match stat_type {
-                StatType::Ram(ref name) => format!("{} - ({} GB)", name, value),
-                StatType::Disk(ref name) => format!("{} - ({} GB)", name, value),
-                StatType::MaxTemp(ref name) => format!("{} - ({} °C)", name, value),
+            let formatted_value = match stat_type {
+                StatType::Ram(_) => format!("({} GB)", value),
+                StatType::Disk(_) => format!("({} GB)", value),
+                StatType::MaxTemp(_) => format!("({} °C)", value),
             };
 
-            let item = Element::from(item(
-                formatted_name,
+            let item = item_row(vec![
+                text(name.clone()).wrap(Wrap::Word).width(125).into(),
+                horizontal_space(Length::Fill).into(),
+                text(formatted_value)
+                    .wrap(Wrap::Word)
+                    .horizontal_alignment(Horizontal::Left)
+                    .into(),
                 toggler(None, is_checked, move |value| {
                     Message::ToggleStat(Stat {
                         stat_type: stat_type.clone(),
                         show: value,
                         label: format!("{} - {}", name, value),
                     })
-                }),
-            ));
+                })
+                .into(),
+            ])
+            .into();
+
             children.push(item);
         }
 
@@ -291,9 +309,8 @@ impl Application for YourApp {
     }
 
     fn view_window(&self, _id: Id) -> Element<Self::Message> {
-        let ram_list = column::with_children(self.stat_list(get_ram_stats(), StatType::Ram))
-            .padding(5)
-            .spacing(5);
+        let ram_list =
+            column::with_children(self.stat_list(get_ram_stats(), StatType::Ram)).spacing(5);
 
         let disks_list =
             column::with_children(self.stat_list(get_disks(), StatType::Disk)).spacing(5);

@@ -8,3 +8,5 @@ available-ram = Available RAM
 total-swap = Total swap
 free-swap = Free swap
 used-swap = Used swap
+max-temp = Max temp
+min-temp = Min temp
