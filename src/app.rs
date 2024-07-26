@@ -32,6 +32,7 @@ pub struct Stat {
     pub stat_type: StatType,
     pub show: bool,
     pub label: String,
+    pub icon: String,
 }
 
 /// This is the struct that represents your application.
@@ -199,6 +200,13 @@ impl YourApp {
                 None => false,
             };
 
+            let icon = match stat_type {
+                StatType::Disk(_) => "drive-harddisk",
+                // StatType::Disk(_) => ICON_DISK,
+                // StatType::MaxTemp(_) => ICON_TEMP,
+                _ => "video-display",
+            };
+
             let formatted_value = match stat_type {
                 StatType::Ram(_) => format!("({} GB)", value),
                 StatType::Disk(_) => format!("({} GB)", value),
@@ -206,7 +214,8 @@ impl YourApp {
             };
 
             let item = item_row(vec![
-                text(name.clone()).wrap(Wrap::Word).width(125).into(),
+                icon::from_name(icon).into(),
+                text(name.clone()).wrap(Wrap::Word).width(115).into(),
                 horizontal_space(Length::Fill).into(),
                 text(formatted_value)
                     .wrap(Wrap::Word)
@@ -217,6 +226,7 @@ impl YourApp {
                         stat_type: stat_type.clone(),
                         show: value,
                         label: format!("{} - {}", name, value),
+                        icon: icon.into(),
                     })
                 })
                 .into(),
@@ -291,8 +301,11 @@ impl Application for YourApp {
         let mut children = vec![];
 
         for stat in &self.stats {
+            let label =
+                row![icon::from_name(stat.icon.clone()), text(stat.label.clone())].spacing(5);
+
             if stat.show {
-                children.push(Element::from(button(text(stat.label.clone()))));
+                children.push(Element::from(label));
             }
         }
 
