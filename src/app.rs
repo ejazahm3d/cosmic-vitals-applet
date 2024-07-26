@@ -84,37 +84,37 @@ fn get_ram_stats() -> Vec<(String, String)> {
 
     ram_stats.push((
         fl!("total-ram"),
-        format!("{:.2} GB", to_gb(system.total_memory())),
+        format!("{:.2}", to_gb(system.total_memory())),
     ));
 
     ram_stats.push((
         fl!("used-ram"),
-        format!("{:.2} GB", to_gb(system.used_memory())),
+        format!("{:.2}", to_gb(system.used_memory())),
     ));
 
     ram_stats.push((
         fl!("free-ram"),
-        format!("{:.2} GB", to_gb(system.free_memory())),
+        format!("{:.2}", to_gb(system.free_memory())),
     ));
 
     ram_stats.push((
         fl!("available-ram"),
-        format!("{:.2} GB", to_gb(system.available_memory())),
+        format!("{:.2}", to_gb(system.available_memory())),
     ));
 
     ram_stats.push((
         fl!("free-swap"),
-        format!("{:.2} GB", to_gb(system.free_swap())),
+        format!("{:.2}", to_gb(system.free_swap())),
     ));
 
     ram_stats.push((
         fl!("total-swap"),
-        format!("{:.2} GB", to_gb(system.total_swap())),
+        format!("{:.2}", to_gb(system.total_swap())),
     ));
 
     ram_stats.push((
         fl!("used-swap"),
-        format!("{:.2} GB", to_gb(system.used_swap())),
+        format!("{:.2}", to_gb(system.used_swap())),
     ));
 
     ram_stats
