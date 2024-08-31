@@ -1,9 +1,7 @@
-// SPDX-License-Identifier: GPL-3.0-only
-
-use std::collections::HashMap;
-
+use crate::config::VitalsAppletConfig;
 use cosmic::app::{Command, Core};
 use cosmic::applet::menu_button;
+use cosmic::cosmic_config::CosmicConfigEntry;
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::wayland::popup::{destroy_popup, get_popup};
 use cosmic::iced::window::Id;
@@ -17,17 +15,19 @@ use cosmic::widget::{
 };
 use cosmic::widget::{text, toggler};
 use cosmic::{Application, Element, Theme};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::fl;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum StatType {
     Ram(String),
     Disk(String),
-    MaxTemp(String),
+    Temp(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Stat {
     pub stat_type: StatType,
     pub show: bool,
@@ -43,7 +43,7 @@ pub struct YourApp {
     core: Core,
     /// The popup id.
     popup: Option<Id>,
-    stats: Vec<Stat>,
+    config: VitalsAppletConfig,
     ram_stat_toggle: bool,
     disk_stat_toggle: bool,
     temp_stat_toggle: bool,
@@ -183,6 +183,7 @@ pub enum Message {
     RamStatsToggle(bool),
     DiskStatsToggle(bool),
     TempStatsToggle(bool),
+    ConfigChanged(VitalsAppletConfig),
 }
 
 impl YourApp {
@@ -195,7 +196,12 @@ impl YourApp {
 
         for (name, value) in stats {
             let stat_type = fn_name(name.clone());
-            let is_checked = match self.stats.iter().find(|x| x.stat_type == stat_type.clone()) {
+            let is_checked = match self
+                .config
+                .stats
+                .iter()
+                .find(|x| x.stat_type == stat_type.clone())
+            {
                 Some(w) => w.show,
                 None => false,
             };
@@ -210,7 +216,7 @@ impl YourApp {
             let formatted_value = match stat_type {
                 StatType::Ram(_) => format!("({} GB)", value),
                 StatType::Disk(_) => format!("({} GB)", value),
-                StatType::MaxTemp(_) => format!("({} °C)", value),
+                StatType::Temp(_) => format!("({} °C)", value),
             };
 
             let item = item_row(vec![
@@ -300,7 +306,7 @@ impl Application for YourApp {
     fn view(&self) -> Element<Self::Message> {
         let mut children = vec![];
 
-        for stat in &self.stats {
+        for stat in &self.config.stats {
             let label =
                 row![icon::from_name(stat.icon.clone()), text(stat.label.clone())].spacing(5);
 
@@ -318,7 +324,15 @@ impl Application for YourApp {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        time::every(std::time::Duration::from_secs(5)).map(|_| Message::Tick)
+        Subscription::batch(vec![
+            self.core.watch_config(Self::APP_ID).map(|u| {
+                for err in u.errors {
+                    println!("Error watching config: {:?}", err);
+                }
+                Message::ConfigChanged(u.config)
+            }),
+            time::every(std::time::Duration::from_secs(2)).map(|_| Message::Tick),
+        ])
     }
 
     fn view_window(&self, _id: Id) -> Element<Self::Message> {
@@ -329,7 +343,7 @@ impl Application for YourApp {
             column::with_children(self.stat_list(get_disks(), StatType::Disk)).spacing(5);
 
         let temp_list =
-            column::with_children(self.stat_list(get_temps(), StatType::MaxTemp)).spacing(5);
+            column::with_children(self.stat_list(get_temps(), StatType::Temp)).spacing(5);
 
         let mut content_list = list_column().add(self.dropdown_menu_button(
             self.temp_stat_toggle,
@@ -397,26 +411,36 @@ impl Application for YourApp {
                     stat.label = match stat.stat_type {
                         StatType::Ram(ref name) => get_ram_usage(name),
                         StatType::Disk(ref name) => get_storage_usage(name),
-                        StatType::MaxTemp(ref name) => get_temp_usage(name),
+                        StatType::Temp(ref name) => get_temp_usage(name),
                     };
 
-                    self.stats.push(stat);
+                    self.config.stats.push(stat);
                 } else {
-                    self.stats.retain(|x| x.stat_type != stat.stat_type);
+                    self.config.stats.retain(|x| x.stat_type != stat.stat_type);
+                }
+
+                if let Ok(helper) =
+                    cosmic::cosmic_config::Config::new(Self::APP_ID, VitalsAppletConfig::VERSION)
+                {
+                    if let Err(err) = self.config.write_entry(&helper) {
+                        println!("Error writing config: {:?}", err);
+                        tracing::error!(?err, "Error writing config");
+                    }
                 }
             }
             Message::Tick => {
-                for stat in &mut self.stats {
+                for stat in &mut self.config.stats {
                     stat.label = match stat.stat_type {
                         StatType::Ram(ref name) => get_ram_usage(name),
                         StatType::Disk(ref name) => get_storage_usage(name),
-                        StatType::MaxTemp(ref name) => get_temp_usage(name),
+                        StatType::Temp(ref name) => get_temp_usage(name),
                     }
                 }
             }
             Message::RamStatsToggle(toggle) => self.ram_stat_toggle = toggle,
             Message::DiskStatsToggle(toggle) => self.disk_stat_toggle = toggle,
             Message::TempStatsToggle(toggle) => self.temp_stat_toggle = toggle,
+            Message::ConfigChanged(c) => self.config = c,
         }
         Command::none()
     }
