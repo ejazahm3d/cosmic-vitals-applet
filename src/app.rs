@@ -307,8 +307,9 @@ impl Application for YourApp {
         let mut children = vec![];
 
         for stat in &self.config.stats {
-            let label =
-                row![icon::from_name(stat.icon.clone()), text(stat.label.clone())].spacing(5);
+            let label = row![icon::from_name(stat.icon.clone()), text(stat.label.clone())]
+                .spacing(5)
+                .align_items(Alignment::Center);
 
             if stat.show {
                 children.push(Element::from(label));
