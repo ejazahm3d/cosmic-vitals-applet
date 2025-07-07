@@ -67,7 +67,7 @@ fn get_ram_usage(name: &str) -> String {
 
 fn get_storage_usage(name: &str) -> String {
     let mut disks = sysinfo::Disks::new();
-    disks.refresh_list();
+    disks.refresh(false);
     let mut storage_usage_text = String::from("");
     for disk in &mut disks {
         if disk.name().eq(name) {
@@ -122,7 +122,7 @@ fn get_ram_stats() -> Vec<(String, String)> {
 
 fn get_disks() -> Vec<(String, String)> {
     let mut disks = sysinfo::Disks::new();
-    disks.refresh_list();
+    disks.refresh(false);
 
     let mut disk_availables: HashMap<String, String> = HashMap::new();
 
@@ -145,16 +145,27 @@ fn get_disks() -> Vec<(String, String)> {
 
 fn get_temps() -> Vec<(String, String)> {
     let mut components = sysinfo::Components::new();
-    components.refresh_list();
+    components.refresh(false);
 
     let mut temps = components
         .iter()
-        .map(|x| (x.label().to_string(), format!("{}", x.temperature() as u32)))
+        .map(|x| {
+            (
+                x.label().to_string(),
+                format!("{}", x.temperature().unwrap()),
+            )
+        })
         .collect::<Vec<(String, String)>>();
 
-    let max_temp = components.iter().map(|x| x.temperature() as u32).max();
+    let max_temp = components
+        .iter()
+        .map(|x| x.temperature().unwrap() as u32)
+        .max();
 
-    let min_temp = components.iter().map(|x| x.temperature() as u32).min();
+    let min_temp = components
+        .iter()
+        .map(|x| x.temperature().unwrap() as u32)
+        .min();
 
     temps.sort_by(|a, b| a.0.cmp(&b.0));
 
